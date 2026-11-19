@@ -1,0 +1,58 @@
+name: update-rules
+
+on:
+  schedule:
+    - cron: "0 21 * * *"        # 每日 UTC 21:00 = 北京时间 05:00
+  workflow_dispatch: {}
+
+permissions:
+  contents: write               # 允许 GITHUB_TOKEN 提交 dist/ 与 upstream/
+
+env:
+  # srs 编译器版本锚定：与本地验证（README 记录）保持一致，保证产物可复现；
+  # 升级只需改这里，并同步 README 的"构建与本地验证"一节
+  SINGBOX_VERSION: "1.14.4"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install sing-box
+        run: |
+          curl -sL -o sb.tgz \
+            "https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VERSION}/sing-box-${SINGBOX_VERSION}-linux-amd64.tar.gz"
+          tar xzf sb.tgz
+          sudo mv "sing-box-${SINGBOX_VERSION}-linux-amd64/sing-box" /usr/local/bin/sing-box
+          sing-box version
+
+      # fetch_upstream.py：下载 + 输入校验（HTML 错误页/行数下限/行语法）+ 3 次重试
+      # + 新鲜度告警（行数骤降 >50% 或连续失败 ≥3 天 → exit 1 红灯；
+      #   普通失败 → ::warning 沿用仓库里的旧文件继续构建）
+      - name: Download upstream category lists (meta-rules-dat, best-effort)
+        run: python3 scripts/fetch_upstream.py
+
+      - name: Build dist
+        run: python3 scripts/build.py
+
+      # 任一步失败即终止 → Commit 步骤不执行 → 失败不发布
+      - name: Validate (format + compile srs + assertions)
+        run: |
+          for f in dist/*.json; do
+            sing-box rule-set format "$f" > /dev/null      # 结构校验
+            sing-box rule-set compile "$f" -o "${f%.json}.srs"
+          done
+          python3 scripts/assert.py
+
+      - name: Commit if changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dist/ upstream/                          # dist 产物 + upstream 上游缓存（含 meta.json 新鲜度记录）
+          if git diff --cached --quiet; then
+            echo "no changes"
+          else
+            git commit -m "自动更新：合并上游类别 $(date -u +%F)"
+            git push
+          fi
