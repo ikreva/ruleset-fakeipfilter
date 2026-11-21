@@ -1,26 +1,26 @@
 {
   "connectivity-check": {
-    "date": "2026-11-20",
+    "date": "2026-11-21",
     "lines": 28
   },
   "connectivity-check-cn": {
-    "date": "2026-11-20",
+    "date": "2026-11-21",
     "lines": 10
   },
   "ntp": {
-    "date": "2026-11-20",
+    "date": "2026-11-21",
     "lines": 116
   },
   "ntp-cn": {
-    "date": "2026-11-20",
+    "date": "2026-11-21",
     "lines": 23
   },
   "stun": {
-    "date": "2026-11-20",
+    "date": "2026-11-21",
     "lines": 359
   },
   "ookla-speedtest": {
-    "date": "2026-11-20",
+    "date": "2026-11-21",
     "lines": 20
   }
 }
