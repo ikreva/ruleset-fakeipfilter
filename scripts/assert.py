@@ -24,6 +24,10 @@ DIST = pathlib.Path(__file__).resolve().parent.parent / "dist"
 
 def load(name: str) -> dict:
     rules = json.loads((DIST / f"{name}.json").read_text(encoding="utf-8"))["rules"]
+    return load_from_rules(rules)
+
+
+def load_from_rules(rules: list) -> dict:
     acc = {"domain": set(), "domain_suffix": set(), "domain_keyword": set(), "domain_regex": []}
     for r in rules:
         for k in ("domain", "domain_suffix", "domain_keyword"):
@@ -118,3 +122,35 @@ if failed:
     print("ASSERT FAILED:", failed)
     sys.exit(1)
 print(f"all {len(CASES)} assertions passed")
+
+# ---- srs 语义读回：compile 可能合法优化条目（被 suffix 覆盖的精确 domain 折叠），
+# 机械条数对比不成立；正确断言 = 51 条 CASES 在编译产物（decompile 读回）上重跑全通过。
+# 需要 sing-box 在 PATH（CI 已安装；本地可用 SINGBOX_BIN 指定），不可用时跳过并告警
+import os
+import shutil
+import subprocess
+import tempfile
+
+singbox = os.environ.get("SINGBOX_BIN") or shutil.which("sing-box")
+if not singbox:
+    print("WARN: 未找到 sing-box，跳过 srs 读回断言（CI 中始终执行）")
+else:
+    for name in ("fakeipfilter-cn", "fakeipfilter-!cn"):
+        srs = DIST / f"{name}.srs"
+        if not srs.exists():
+            print(f"ASSERT FAILED: {srs.name} 不存在")
+            sys.exit(1)
+        with tempfile.TemporaryDirectory() as td:
+            out = pathlib.Path(td) / "readback.json"
+            r = subprocess.run([singbox, "rule-set", "decompile", str(srs), "-o", str(out)],
+                               capture_output=True, text=True)
+            if r.returncode != 0:
+                print(f"ASSERT FAILED: {srs.name} 反编译失败：{(r.stderr or r.stdout)[:300]}")
+                sys.exit(1)
+            back = load_from_rules(json.loads(out.read_text(encoding="utf-8"))["rules"])
+        cases = [(d, tgt, exp) for d, tgt, exp in CASES if tgt is (cn if name == "fakeipfilter-cn" else notcn)]
+        failed_back = [d for d, target, expect in cases if hit(back, d) != expect]
+        if failed_back:
+            print(f"ASSERT FAILED: {name} srs 读回语义断言失败：{failed_back}")
+            sys.exit(1)
+        print(f"ok {name}: srs 读回语义断言通过（{len(cases)} 条探针）")

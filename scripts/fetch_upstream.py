@@ -28,6 +28,11 @@ UP = ROOT / "upstream"
 META = UP / "meta.json"
 
 BASE = "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/{name}.list"
+# 双链容灾：raw 失败依次尝试 jsDelivr 镜像（同分支同路径）
+MIRRORS = [
+    "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/{name}.list",
+    "https://cdn.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@meta/geo/geosite/{name}.list",
+]
 RETRY, RETRY_WAIT, TIMEOUT = 3, 5, 60
 MIN_LINES = 5          # 有效行数下限（connectivity-check-cn 仅 9 行，5 足够保守）
 DROP_RATIO = 0.5       # 行数低于上一版的该比例视为骤降
@@ -57,15 +62,16 @@ def save_meta(meta: dict) -> None:
 
 
 def fetch(name: str) -> str | None:
-    url = BASE.format(name=name)
-    for attempt in range(1, RETRY + 1):
-        try:
-            with urllib.request.urlopen(url, timeout=TIMEOUT) as resp:
-                return resp.read().decode("utf-8", errors="replace")
-        except Exception as exc:                       # 网络/HTTP 异常统一按失败处理
-            print(f"  第 {attempt}/{RETRY} 次下载失败：{exc}")
-            if attempt < RETRY:
-                time.sleep(RETRY_WAIT)
+    urls = [u.format(name=name) for u in MIRRORS]
+    for url in urls:
+        for attempt in range(1, RETRY + 1):
+            try:
+                with urllib.request.urlopen(url, timeout=TIMEOUT) as resp:
+                    return resp.read().decode("utf-8", errors="replace")
+            except Exception as exc:                   # 网络/HTTP 异常统一按失败处理
+                print(f"  第 {attempt}/{RETRY} 次下载失败 {url}：{exc}")
+                if attempt < RETRY:
+                    time.sleep(RETRY_WAIT)
     return None
 
 
