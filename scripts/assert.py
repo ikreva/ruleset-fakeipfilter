@@ -83,14 +83,22 @@ CASES = [
     # ---- 重症：本地/路由管理域 ----
     ("localhost",                   cn,    True),   # RFC 6761 特殊域（单标签豁免）
     ("router.asus.com",             cn,    True),   # 华硕管理主域（+. 修复后含裸域）
+    ("printer.internal",            cn,    True),   # 企业/家庭内网伪 TLD
+    ("camera.home",                 cn,    True),   # 摄像头等 IoT 内网主机名
     # ---- 重症：远程访问 / DDNS（解析结果指向用户自己的设备）----
     ("myhost.ts.net",               notcn, True),
     ("mesh.tailscale.com",          notcn, True),
     ("abc.quickconnect.to",         notcn, True),   # 群晖 QuickConnect
     ("myvps.duckdns.org",           notcn, True),   # 自建 VPN DDNS
+    ("myhost.ddns.net",             notcn, True),   # 免费 DDNS 扩充
+    ("nas.hopto.org",               notcn, True),   # no-ip 系免费 DDNS
     # ---- 轻症优化：IP 调度型 CDN / 测速 / BT UDP tracker ----
     ("speedtest.net",               notcn, True),   # Ookla 测速（选服务器消费真实 IP）
     ("tracker.opentrackr.org",      notcn, True),   # BT UDP announce 直连
+    ("exodus.desync.com",           notcn, True),   # 公共 tracker 上游类别探针
+    ("open.tracker.cl",             notcn, True),   # 公共 tracker 上游类别探针
+    ("supl.google.com",             notcn, True),   # Android SUPL A-GPS（真实 IP 就近）
+    ("xtra1.gpsonextra.net",        notcn, True),   # Qualcomm XTRA 星历下载
     ("music.163.com",               cn,    True),   # 网易云音乐调度
     # ---- 大厂覆盖反例：路由大厂必须走 Fake-IP（不在名单）----
     ("www.baidu.com",               cn,    False),

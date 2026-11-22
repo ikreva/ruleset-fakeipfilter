@@ -96,3 +96,16 @@ na.b.g-tun.com
 +.openbittorrent.com
 +.publicbt.com
 tracker.ubuntu.com  #Ubuntu 种子官方 tracker（语义纯净）
+#（全量公共 tracker 由上游类别 category-public-tracker 系统化覆盖）
+
+#A-GPS 辅助定位（SUPL/XTRA：客户端消费真实 IP 就近获取星历/时间）
+supl.google.com    #Android SUPL 主端点
++.gpsonextra.net   #Qualcomm XTRA 星历/时间下载
+
+#免费 DDNS 扩充（解析结果指向用户自建设备，重症同 ts.net/duckdns）
++.no-ip.org
++.hopto.org
++.zapto.org
++.sytes.net
++.ddns.net
++.dynv6.com

@@ -9,6 +9,11 @@ localhost
 *.local
 *.home.arpa
 *.direct
+*.internal
+*.corp
+*.intranet
+*.localnet
+*.home
 PDC._msDCS.*.*
 DC._msDCS.*.*
 GC._msDCS.*.*

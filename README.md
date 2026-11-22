@@ -1,6 +1,6 @@
 # ruleset-fakeipfilter
 
-Fake-IP 排除名单（fakeipfilter-cn / fakeipfilter-!cn）自建仓：上游类别 + 手写段 → 每日 CI 校验合并 → **sing-box srs / mihomo classical list** 双内核分发，51 条语义断言守门。
+Fake-IP 排除名单（fakeipfilter-cn / fakeipfilter-!cn）自建仓：上游类别 + 手写段 → 每日 CI 校验合并 → **sing-box srs / mihomo classical list** 双内核分发，59 条语义断言守门。
 
 | 产物 | 格式 | 分发（jsDelivr CDN） |
 | --- | --- | --- |
@@ -37,7 +37,7 @@ nameserver-policy:
   "rule-set:fakeipfilter-cn": https://223.5.5.5/dns-query
 ```
 
-> **为什么没有 mrs**：名单含 DOMAIN-KEYWORD/DOMAIN-REGEX，classical 语义进不了 mrs（mihomo `convert-ruleset classical` 实测 panic）——mihomo 侧使用 classical text；sing-box 侧 srs 为 domain 语义（KEYWORD/REGEX 已入 source）。
+> **为什么没有 mrs**：名单含 DOMAIN-REGEX（构建器另支持 DOMAIN-KEYWORD，当前数据未用到），classical 语义进不了 mrs（mihomo `convert-ruleset classical` 实测 panic，栈在 `rules/provider/mrs_converter.go:108`）——mihomo 侧使用 classical text；sing-box 侧 srs 为 domain 语义（REGEX 已入 source）。
 
 ## 准入语义（唯一）
 
@@ -48,7 +48,7 @@ nameserver-policy:
 ```bash
 python3 scripts/fetch_upstream.py   # 上游类别（raw + jsDelivr 双链重试 + 新鲜度审计）
 python3 scripts/build.py            # sources + upstream → dist/*.json 与 .list
-SINGBOX_BIN=<sing-box> python3 scripts/assert.py   # 51 条 json 语义断言 + 51 条 srs 读回语义探针
+SINGBOX_BIN=<sing-box> python3 scripts/assert.py   # 59 条 json 语义断言 + 59 条 srs 读回语义探针
 ```
 
 CI：每日 UTC 21:00（北京时间 05:00）；断言失败不发布；上游失败沿用本地缓存并 `::warning`，行数骤降 >50% 或连续失败 ≥3 天红灯。srs 编译器锚定 v1.14.4（workflow `env.SINGBOX_VERSION`）。

@@ -135,10 +135,14 @@ DOMAIN-REGEX,^(.+\.)?stun\.[^.]+\.cn
 DOMAIN-REGEX,^[^.]+\.10099\.com\.cn
 DOMAIN-REGEX,^[^.]+\.126\.net
 DOMAIN-REGEX,^[^.]+\.blzstatic\.cn
+DOMAIN-REGEX,^[^.]+\.corp
 DOMAIN-REGEX,^[^.]+\.direct
 DOMAIN-REGEX,^[^.]+\.example
 DOMAIN-REGEX,^[^.]+\.ff14\.sdo\.com
+DOMAIN-REGEX,^[^.]+\.home
 DOMAIN-REGEX,^[^.]+\.home\.arpa
+DOMAIN-REGEX,^[^.]+\.internal
+DOMAIN-REGEX,^[^.]+\.intranet
 DOMAIN-REGEX,^[^.]+\.invalid
 DOMAIN-REGEX,^[^.]+\.jegotrip\.com\.cn
 DOMAIN-REGEX,^[^.]+\.kuwo\.cn
@@ -146,6 +150,7 @@ DOMAIN-REGEX,^[^.]+\.lan
 DOMAIN-REGEX,^[^.]+\.local
 DOMAIN-REGEX,^[^.]+\.localdomain
 DOMAIN-REGEX,^[^.]+\.localhost
+DOMAIN-REGEX,^[^.]+\.localnet
 DOMAIN-REGEX,^[^.]+\.mcdn\.bilivideo\.cn
 DOMAIN-REGEX,^[^.]+\.microdone\.cn
 DOMAIN-REGEX,^[^.]+\.music\.163\.com

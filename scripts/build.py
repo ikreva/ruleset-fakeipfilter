@@ -29,6 +29,8 @@ TARGETS = {
         ("upstream", "ntp"),
         ("upstream", "stun"),
         ("upstream", "ookla-speedtest"),
+        ("upstream", "speedtest"),
+        ("upstream", "public-tracker"),
     ],
 }
 

@@ -46,6 +46,8 @@ UPSTREAMS = [
     ("category-ntp-cn", "ntp-cn"),
     ("category-stun", "stun"),
     ("ookla-speedtest", "ookla-speedtest"),
+    ("speedtest", "speedtest"),
+    ("category-public-tracker", "public-tracker"),
 ]
 
 LINE_RE = re.compile(r"[a-z0-9.*+_-]+")   # .list 行语法白名单（小写化后）
