@@ -1,34 +1,30 @@
 {
   "connectivity-check": {
-    "date": "2026-11-23",
+    "date": "2026-11-22",
     "lines": 28
   },
   "connectivity-check-cn": {
-    "date": "2026-11-23",
+    "date": "2026-11-22",
     "lines": 10
   },
   "ntp": {
-    "date": "2026-11-23",
+    "date": "2026-11-22",
     "lines": 116
   },
   "ntp-cn": {
-    "date": "2026-11-23",
+    "date": "2026-11-22",
     "lines": 23
   },
   "stun": {
-    "date": "2026-11-23",
+    "date": "2026-11-22",
     "lines": 359
   },
   "ookla-speedtest": {
-    "date": "2026-11-23",
-    "lines": 20
-  },
-  "speedtest": {
-    "date": "2026-11-23",
+    "date": "2026-11-22",
     "lines": 20
   },
   "public-tracker": {
-    "date": "2026-11-23",
+    "date": "2026-11-22",
     "lines": 437
   }
 }

@@ -48,7 +48,7 @@ nameserver-policy:
 ```bash
 python3 scripts/fetch_upstream.py   # 上游类别（raw + jsDelivr 双链重试 + 新鲜度审计）
 python3 scripts/build.py            # sources + upstream → dist/*.json 与 .list
-SINGBOX_BIN=<sing-box> python3 scripts/assert.py   # 59 条 json 语义断言 + 59 条 srs 读回语义探针
+SINGBOX_BIN=<sing-box> python3 scripts/assert.py   # 59 条语义断言 × 三层产物（json / srs 读回 / classical .list）
 ```
 
 CI：每日 UTC 21:00（北京时间 05:00）；断言失败不发布；上游失败沿用本地缓存并 `::warning`，行数骤降 >50% 或连续失败 ≥3 天红灯。srs 编译器锚定 v1.14.4（workflow `env.SINGBOX_VERSION`）。

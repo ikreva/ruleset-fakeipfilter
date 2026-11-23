@@ -45,8 +45,9 @@ UPSTREAMS = [
     ("category-ntp", "ntp"),
     ("category-ntp-cn", "ntp-cn"),
     ("category-stun", "stun"),
+    # 注：v2fly 的 speedtest 类别与 ookla-speedtest 内容完全相同（2026-11-23 实测
+    # 交集 20/20），按「已覆盖不重复引入」原则不接入；若日后分化再评估
     ("ookla-speedtest", "ookla-speedtest"),
-    ("speedtest", "speedtest"),
     ("category-public-tracker", "public-tracker"),
 ]
 

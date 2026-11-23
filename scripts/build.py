@@ -29,7 +29,6 @@ TARGETS = {
         ("upstream", "ntp"),
         ("upstream", "stun"),
         ("upstream", "ookla-speedtest"),
-        ("upstream", "speedtest"),
         ("upstream", "public-tracker"),
     ],
 }
@@ -258,7 +257,17 @@ def optimize_by_regex(merged: dict) -> tuple[dict, int]:
 
 def to_clash_list(merged: dict) -> str:
     lines = ["# 自动生成于 build.py，勿手改；修改请编辑 sources/*.manual.list"]
-    lines += [f"DOMAIN,{d}" for d in merged.get("domain", [])]
+    # mihomo DOMAIN-SUFFIX 匹配含 apex（源码 rules/common/domain_suffix.go：
+    # HasSuffix(domain, "."+suffix) || domain == suffix）——被后缀覆盖的 DOMAIN
+    # 条目（apex 自身与其子域）在 classical list 中冗余，剔除后 mihomo 线性匹配
+    # 规则量近乎减半。json 侧保留 domain 条目：sing-box domain_suffix 不含 apex，
+    # 语义等价依赖 domain+suffix 双条目。
+    suffixes = {s.lstrip(".") for s in merged.get("domain_suffix", [])}
+
+    def suffix_covered(d: str) -> bool:
+        return any(d == s or d.endswith("." + s) for s in suffixes)
+
+    lines += [f"DOMAIN,{d}" for d in merged.get("domain", []) if not suffix_covered(d)]
     lines += [f"DOMAIN-SUFFIX,{s.lstrip('.')}" for s in merged.get("domain_suffix", [])]
     lines += [f"DOMAIN-KEYWORD,{k}" for k in merged.get("domain_keyword", [])]
     lines += [f"DOMAIN-REGEX,{r}" for r in merged.get("domain_regex", [])]

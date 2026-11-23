@@ -162,3 +162,43 @@ else:
             print(f"ASSERT FAILED: {name} srs 读回语义断言失败：{failed_back}")
             sys.exit(1)
         print(f"ok {name}: srs 读回语义断言通过（{len(cases)} 条探针）")
+
+# ---- classical .list 语义探针（mihomo 侧产物闭环）：
+# DOMAIN 精确 / DOMAIN-SUFFIX 含 apex 与子域（rules/common/domain_suffix.go：
+# HasSuffix(domain, "."+suffix) || domain == suffix）/ KEYWORD 子串 / REGEX fullmatch。
+# build 的 apex 去冗余逻辑正确性由本组探针守门。
+def load_classical(name: str) -> dict:
+    dom, sfx, kw, rex = set(), set(), set(), []
+    for raw in (DIST / f"{name}.list").read_text(encoding="utf-8").splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line:
+            continue
+        parts = line.split(",")
+        t = parts[0].strip().upper()
+        if t == "DOMAIN":
+            dom.add(parts[1].strip().lower())
+        elif t == "DOMAIN-SUFFIX":
+            sfx.add(parts[1].strip().lower())
+        elif t == "DOMAIN-KEYWORD":
+            kw.add(parts[1].strip().lower())
+        elif t == "DOMAIN-REGEX":
+            rex.append(re.compile(parts[1].strip()))
+        # IP-CIDR 行在 fake-ip-filter 域匹配语境自然失效（parseDomainRuleSet 只取域规则），跳过
+    return {"domain": dom, "suffix": sfx, "keyword": kw, "regex": rex}
+
+
+def hit_classical(c: dict, d: str) -> bool:
+    return (d in c["domain"]
+            or any(d == s or d.endswith("." + s) for s in c["suffix"])
+            or any(k in d for k in c["keyword"])
+            or any(p.fullmatch(d) for p in c["regex"]))
+
+
+for name in ("fakeipfilter-cn", "fakeipfilter-!cn"):
+    cl = load_classical(name)
+    cases = [(d, tgt, exp) for d, tgt, exp in CASES if tgt is (cn if name == "fakeipfilter-cn" else notcn)]
+    failed_cl = [d for d, target, expect in cases if hit_classical(cl, d) != expect]
+    if failed_cl:
+        print(f"ASSERT FAILED: {name} classical .list 语义断言失败：{failed_cl}")
+        sys.exit(1)
+    print(f"ok {name}: classical .list 语义断言通过（{len(cases)} 条探针）")
