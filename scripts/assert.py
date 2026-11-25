@@ -1,23 +1,22 @@
 #!/usr/bin/env python3
-"""CI 语义断言：命中/不命中样例必须全部符合预期，否则失败不发布。
+"""CI 语义断言：全层产物（JSON / SRS / 兼容 .list / 5B .mrs + -regex.list）与结构不变量全对称守门。
 
-语义依据（L1 判定器①准入）：名单 = 客户端本地消费真实 IP（a）+ 国内快速通过输入（b）；
-路由大厂必须走 Fake-IP（不在名单）。
-
-CASES 分层：
-1. 重症正例——漏了直接坏的域（连网检测/NTP/STUN/游戏主机/号码认证/远程访问/路由管理），
-   与设计文档 §1 重症场景表逐行对应；
-2. 大厂覆盖反例（L3 指南采纳原则 1）——路由大厂必须不在排除名单；
-3. 两用域过滤证据——gstatic 系必须被 connectivity-exclude 剔除
-   （www.gstatic.com = 检测+资源两用 → Fake-IP 代理+落地解析；
-     connectivitycheck.gstatic.com = 被墙纯检测端点 → Fake-IP 代理探测自洽）；
-4. 纪律固化反例——DNS 泄露检测站永不收（自欺欺人）、游戏"分流分类"域
-   （Steam 商店/Epic 官网）与 DoH 自举域（污染环境本地解析反而有害）永不收。
+关键对齐：
+- 正则匹配使用 `re.search`（对齐 Go `regexp.MatchString` 与 mihomo `regexp2.MatchString`）；
+- 校验每条 `domain_regex` 必须以 `^` 开头、以 `$` 结尾；
+- 校验 `fakeipfilter-cn` 与 `fakeipfilter-!cn` 的 `domain` / `domain_suffix` 严格互斥；
+- 校验后缀剪枝后无自包含冗余；
+- JSON、SRS 反编译读回、classical `.list` 三层对称跑单集断言 + 联合优先级断言；
+- 5B 产物 `.mrs`（存在且非空）+ `-regex.list`（纯 DOMAIN-REGEX 且条数与 JSON 一致）完整核验。
 """
 import json
+import os
 import pathlib
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 
 DIST = pathlib.Path(__file__).resolve().parent.parent / "dist"
 
@@ -40,67 +39,119 @@ def load_from_rules(rules: list) -> dict:
 def hit(sets: dict, domain: str) -> bool:
     if domain in sets["domain"]:
         return True
-    # 前导点后缀匹配子域；apex（裸域本身）由 add_domain 的精确条目覆盖，
-    # 但为防御 optimize 剔除精确条目后的边界，这里同时接受 apex 相等
-    if any(domain.endswith(s) or domain == s.lstrip(".") for s in sets["domain_suffix"]):
+    if any(domain.endswith(s) for s in sets["domain_suffix"]):
         return True
     if any(k in domain for k in sets["domain_keyword"]):
         return True
-    return any(p.fullmatch(domain) for p in sets["regex"])   # 去冗余后 regex 是最终覆盖者
+    return any(p.search(domain) for p in sets["regex"])
 
 
 cn, notcn = load("fakeipfilter-cn"), load("fakeipfilter-!cn")
 
+# ---- 结构不变量 1：全部 domain_regex 必须两端锚定 ^...$ 且不含逗号（防 classical .list 逗号截断）----
+for name, sets in (("fakeipfilter-cn", cn), ("fakeipfilter-!cn", notcn)):
+    bad_regex = [p for p in sets["domain_regex"] if not (p.startswith("^") and p.endswith("$")) or "," in p]
+    if bad_regex:
+        print(f"ASSERT FAILED ({name}): 非法 domain_regex（未 ^...$ 锚定或含逗号）：{bad_regex}")
+        sys.exit(1)
+
+# ---- 结构不变量 2：cn 与 !cn 的 domain / domain_suffix 严格互斥 ----
+dup_domains = sorted(cn["domain"] & notcn["domain"])
+dup_suffixes = sorted(cn["domain_suffix"] & notcn["domain_suffix"])
+if dup_domains or dup_suffixes:
+    print(f"ASSERT FAILED: cn 与 !cn 存在重叠：domains={dup_domains}, suffixes={dup_suffixes}")
+    sys.exit(1)
+
+# ---- 结构不变量 3：后缀剪枝后无自包含冗余 ----
+for name, sets in (("fakeipfilter-cn", cn), ("fakeipfilter-!cn", notcn)):
+    sub_dup = [d for d in sets["domain"] if any(d.endswith(s) for s in sets["domain_suffix"])]
+    sfx_dup = [s for s in sets["domain_suffix"] if any(s != o and s.endswith(o) for o in sets["domain_suffix"])]
+    if sub_dup or sfx_dup:
+        print(f"ASSERT FAILED ({name}): 存在后缀冗余：sub={sub_dup[:5]}, sfx={sfx_dup[:5]}")
+        sys.exit(1)
+
+print(f"ok structural invariants: regex anchored (cn={len(cn['domain_regex'])}, !cn={len(notcn['domain_regex'])}), disjoint & suffix-pruned")
+
 # (域名, 名单, 期望是否命中)
 CASES = [
-    # ---- 重症：连网检测（captive portal / NCSI）----
-    ("captive.apple.com",           notcn, True),
-    ("dns.msftncsi.com",            notcn, True),
-    ("www.msftconnecttest.com",     notcn, True),
+    # ---- 重症：本地/国内连网检测（归 cn，防断代理误报无网络；且不入 !cn）----
+    ("captive.apple.com",           cn,    True),
+    ("captive.apple.com",           notcn, False),
+    ("dns.msftncsi.com",            cn,    True),
+    ("dns.msftncsi.com",            notcn, False),
+    ("www.msftconnecttest.com",     cn,    True),
+    ("www.msftconnecttest.com",     notcn, False),
+    ("connect.rom.miui.com",        cn,    True),
+    ("connect.rom.miui.com",        notcn, False),
+    # ---- 重症：海外连网检测 ----
     ("detectportal.firefox.com",    notcn, True),
     ("networkcheck.kde.org",        notcn, True),
     # ---- 重症：NTP 校时 ----
     ("time.windows.com",            notcn, True),
     ("time.apple.com",              notcn, True),
-    ("time.android.com",            notcn, True),   # Android 校时（手写段补充，v2fly 未收录）
-    ("time.edu.cn",                 cn,    True),   # 教育网 NTP 主域（+. 修复后含裸域）
+    ("time.android.com",            notcn, True),
+    ("time.edu.cn",                 cn,    True),
     ("ntp.aliyun.com",              cn,    True),
     ("time1.cloud.tencent.com",     cn,    True),
     ("2.cn.pool.ntp.org",           cn,    True),
     ("europe.pool.ntp.org",         notcn, True),
     # ---- 重症：STUN / NAT 探测 ----
     ("stun.l.google.com",           notcn, True),
-    ("stun.cloudflare.com",         notcn, True),   # 手写通配 +.stun.*.* 覆盖
+    ("stun.cloudflare.com",         notcn, True),
+    ("stun.qq.cn",                  cn,    True),
+    ("stunning.example.com",        notcn, False),
     # ---- 重症：游戏主机 NAT / 平台联机 ----
-    ("battle.net",                  notcn, True),   # 战网登录/NAT（裸域 apex）
-    ("patch.steamcontent.com",      notcn, True),   # Steam 内容 CDN（真实 IP 就近下载）
-    ("a.srv.nintendo.net",          notcn, True),   # Switch NAT 打洞
-    ("stun.playstation.net",        notcn, True),   # PSN STUN（裸域 apex）
+    ("battle.net",                  notcn, True),
+    ("patch.steamcontent.com",      notcn, True),
+    ("a.srv.nintendo.net",          notcn, True),
+    ("stun.playstation.net",        notcn, True),
+    ("xbox.ipv6.microsoft.com",     notcn, True),
     # ---- 重症：运营商号码认证 / 一键登录 ----
     ("id6.me",                      cn,    True),
-    ("cmpassport.com",              cn,    True),   # 移动认证基础设施（+. 修复后含裸域）
+    ("cmpassport.com",              cn,    True),
     ("enrichgw.10010.com",          cn,    True),
-    # ---- 重症：本地/路由管理域 ----
-    ("localhost",                   cn,    True),   # RFC 6761 特殊域（单标签豁免）
-    ("router.asus.com",             cn,    True),   # 华硕管理主域（+. 修复后含裸域）
-    ("printer.internal",            cn,    True),   # 企业/家庭内网伪 TLD
-    ("camera.home",                 cn,    True),   # 摄像头等 IoT 内网主机名
-    # ---- 重症：远程访问 / DDNS（解析结果指向用户自己的设备）----
+    # ---- 重症：本地/路由管理域（走 trie domain_suffix）----
+    ("localhost",                   cn,    True),
+    ("printer.lan",                 cn,    True),
+    ("nas.local",                   cn,    True),
+    ("router.home.arpa",            cn,    True),
+    ("router.asus.com",             cn,    True),
+    ("printer.internal",            cn,    True),
+    ("camera.home",                 cn,    True),
+    ("pdc._msdcs.corp.local",       cn,    True),
+    # ---- 正则防泄露反例：绝不可被 .lan/.home/.direct/.corp/.local/.test 误杀 ----
+    ("www.langchain.com",           cn,    False),
+    ("www.langchain.com",           notcn, False),
+    ("www.homedepot.com",           cn,    False),
+    ("www.homedepot.com",           notcn, False),
+    ("www.directv.com",             cn,    False),
+    ("www.directv.com",             notcn, False),
+    ("www.corporate.com",           cn,    False),
+    ("www.testing.com",             cn,    False),
+    ("www.localhost.com",           cn,    False),
+    ("www.example.com",             cn,    False),
+    # ---- 重症：远程访问 / DDNS ----
     ("myhost.ts.net",               notcn, True),
     ("mesh.tailscale.com",          notcn, True),
-    ("abc.quickconnect.to",         notcn, True),   # 群晖 QuickConnect
-    ("myvps.duckdns.org",           notcn, True),   # 自建 VPN DDNS
-    ("myhost.ddns.net",             notcn, True),   # 免费 DDNS 扩充
-    ("nas.hopto.org",               notcn, True),   # no-ip 系免费 DDNS
-    # ---- 轻症优化：IP 调度型 CDN / 测速 / BT UDP tracker ----
-    ("speedtest.net",               notcn, True),   # Ookla 测速（选服务器消费真实 IP）
-    ("tracker.opentrackr.org",      notcn, True),   # BT UDP announce 直连
-    ("exodus.desync.com",           notcn, True),   # 公共 tracker 上游类别探针
-    ("open.tracker.cl",             notcn, True),   # 公共 tracker 上游类别探针
-    ("supl.google.com",             notcn, True),   # Android SUPL A-GPS（真实 IP 就近）
-    ("xtra1.gpsonextra.net",        notcn, True),   # Qualcomm XTRA 星历下载
-    ("music.163.com",               cn,    True),   # 网易云音乐调度
-    # ---- 大厂覆盖反例：路由大厂必须走 Fake-IP（不在名单）----
+    ("abc.quickconnect.to",         notcn, True),
+    ("myvps.duckdns.org",           notcn, True),
+    ("myhost.ddns.net",             notcn, True),
+    ("nas.hopto.org",               notcn, True),
+    # ---- 轻症优化：测速 / BT UDP tracker / A-GPS / 音乐 ----
+    ("speedtest.net",               notcn, True),
+    ("tracker.opentrackr.org",      notcn, True),
+    ("exodus.desync.com",           notcn, True),
+    ("open.tracker.cl",             notcn, True),
+    ("supl.google.com",             notcn, True),
+    ("xtra1.gpsonextra.net",        notcn, True),
+    ("music.163.com",               cn,    True),
+    # ---- 流媒体 CDN 与历史误收反例：必须保留 Fake-IP ----
+    ("ipv4-c001-lax001-ix.1.oca.nflxvideo.net", notcn, False),
+    ("vod-ftc-na-west-1.media.dssott.com",      notcn, False),
+    ("proxy.golang.org",                        notcn, False),
+    ("a.xiami.com",                             cn,    False),
+    ("static.126.net",                          cn,    False),
+    # ---- 大厂覆盖反例：路由大厂必须走 Fake-IP ----
     ("www.baidu.com",               cn,    False),
     ("www.baidu.com",               notcn, False),
     ("github.com",                  cn,    False),
@@ -117,32 +168,72 @@ CASES = [
     ("connectivitycheck.gstatic.com", cn,  False),
     ("connectivitycheck.gstatic.com", notcn, False),
     # ---- 纪律固化反例：永不收 ----
-    ("dnsleaktest.com",             notcn, False),  # DNS 泄露检测站（自欺欺人）
-    ("browserleaks.com",            notcn, False),  # 指纹/泄露检测站
-    ("ipleak.net",                  notcn, False),  # 泄露检测站
-    ("store.steampowered.com",      notcn, False),  # Steam 商店 = 分流域（games 纪律：只收 CDN/NAT 子域）
-    ("epicgames.com",               notcn, False),  # Epic 官网 = 分流域，禁止整类并入
-    ("dns.google",                  notcn, False),  # DoH 自举不收：污染环境本地解析反而有害，Fake-IP 域名出站自洽
+    ("dnsleaktest.com",             notcn, False),
+    ("browserleaks.com",            notcn, False),
+    ("ipleak.net",                  notcn, False),
+    ("store.steampowered.com",      notcn, False),
+    ("epicgames.com",               notcn, False),
+    ("dns.google",                  notcn, False),
 ]
 
-failed = [d for d, target, expect in CASES if hit(target, d) != expect]
+COMBINED_CASES = [
+    ("dns.msftncsi.com", "cn"),
+    ("www.msftconnecttest.com", "cn"),
+    ("captive.apple.com", "cn"),
+    ("connect.rom.miui.com", "cn"),
+    ("ntp.aliyun.com", "cn"),
+    ("2.cn.pool.ntp.org", "cn"),
+    ("printer.lan", "cn"),
+    ("stun.qq.cn", "cn"),
+    ("stun.l.google.com", "!cn"),
+    ("europe.pool.ntp.org", "!cn"),
+    ("time.windows.com", "!cn"),
+    ("a.srv.nintendo.net", "!cn"),
+    ("www.langchain.com", "fakeip"),
+    ("www.homedepot.com", "fakeip"),
+    ("www.directv.com", "fakeip"),
+    ("ipv4-c001-lax001-ix.1.oca.nflxvideo.net", "fakeip"),
+    ("vod-ftc-na-west-1.media.dssott.com", "fakeip"),
+    ("proxy.golang.org", "fakeip"),
+    ("www.gstatic.com", "fakeip"),
+    ("dnsleaktest.com", "fakeip"),
+]
+
+
+def route_combined(cn_sets: dict, notcn_sets: dict, matcher, domain: str) -> str:
+    if matcher(cn_sets, domain):
+        return "cn"
+    if matcher(notcn_sets, domain):
+        return "!cn"
+    return "fakeip"
+
+
+def check_combined(label: str, cn_sets: dict, notcn_sets: dict, matcher) -> None:
+    bad = [
+        (d, exp, route_combined(cn_sets, notcn_sets, matcher, d))
+        for d, exp in COMBINED_CASES
+        if route_combined(cn_sets, notcn_sets, matcher, d) != exp
+    ]
+    if bad:
+        print(f"ASSERT FAILED (combined {label}):", bad)
+        sys.exit(1)
+    print(f"ok combined ({label}): {len(COMBINED_CASES)} 条联合优先级探针全通过")
+
+
+# 1. JSON 层
+failed = [(d, expect) for d, target, expect in CASES if hit(target, d) != expect]
 if failed:
-    print("ASSERT FAILED:", failed)
+    print("ASSERT FAILED (json):", failed)
     sys.exit(1)
-print(f"all {len(CASES)} assertions passed")
+print(f"ok json: {len(CASES)} 条单集断言全通过")
+check_combined("json", cn, notcn, hit)
 
-# ---- srs 语义读回：compile 可能合法优化条目（被 suffix 覆盖的精确 domain 折叠），
-# 机械条数对比不成立；正确断言 = 51 条 CASES 在编译产物（decompile 读回）上重跑全通过。
-# 需要 sing-box 在 PATH（CI 已安装；本地可用 SINGBOX_BIN 指定），不可用时跳过并告警
-import os
-import shutil
-import subprocess
-import tempfile
-
+# 2. SRS 反编译读回层（单集 + 联合优先级）
 singbox = os.environ.get("SINGBOX_BIN") or shutil.which("sing-box")
 if not singbox:
-    print("WARN: 未找到 sing-box，跳过 srs 读回断言（CI 中始终执行）")
+    print("WARN: 未找到 sing-box，跳过 srs 读回断言")
 else:
+    srs_loaded: dict[str, dict] = {}
     for name in ("fakeipfilter-cn", "fakeipfilter-!cn"):
         srs = DIST / f"{name}.srs"
         if not srs.exists():
@@ -156,20 +247,20 @@ else:
                 print(f"ASSERT FAILED: {srs.name} 反编译失败：{(r.stderr or r.stdout)[:300]}")
                 sys.exit(1)
             back = load_from_rules(json.loads(out.read_text(encoding="utf-8"))["rules"])
+            srs_loaded[name] = back
         cases = [(d, tgt, exp) for d, tgt, exp in CASES if tgt is (cn if name == "fakeipfilter-cn" else notcn)]
-        failed_back = [d for d, target, expect in cases if hit(back, d) != expect]
+        failed_back = [(d, exp) for d, target, exp in cases if hit(back, d) != exp]
         if failed_back:
             print(f"ASSERT FAILED: {name} srs 读回语义断言失败：{failed_back}")
             sys.exit(1)
-        print(f"ok {name}: srs 读回语义断言通过（{len(cases)} 条探针）")
+        print(f"ok {name}: srs 读回单集断言通过（{len(cases)} 条探针）")
+    check_combined("srs", srs_loaded["fakeipfilter-cn"], srs_loaded["fakeipfilter-!cn"], hit)
 
-# ---- classical .list 语义探针（mihomo 侧产物闭环）：
-# DOMAIN 精确 / DOMAIN-SUFFIX 含 apex 与子域（rules/common/domain_suffix.go：
-# HasSuffix(domain, "."+suffix) || domain == suffix）/ KEYWORD 子串 / REGEX fullmatch。
-# build 的 apex 去冗余逻辑正确性由本组探针守门。
-def load_classical(name: str) -> dict:
+
+# 3. 兼容全量 classical `.list` 层（单集 + 联合优先级）
+def load_classical(path: pathlib.Path) -> dict:
     dom, sfx, kw, rex = set(), set(), set(), []
-    for raw in (DIST / f"{name}.list").read_text(encoding="utf-8").splitlines():
+    for raw in path.read_text(encoding="utf-8").splitlines():
         line = raw.split("#", 1)[0].strip()
         if not line:
             continue
@@ -183,7 +274,6 @@ def load_classical(name: str) -> dict:
             kw.add(parts[1].strip().lower())
         elif t == "DOMAIN-REGEX":
             rex.append(re.compile(parts[1].strip()))
-        # IP-CIDR 行在 fake-ip-filter 域匹配语境自然失效（parseDomainRuleSet 只取域规则），跳过
     return {"domain": dom, "suffix": sfx, "keyword": kw, "regex": rex}
 
 
@@ -191,14 +281,36 @@ def hit_classical(c: dict, d: str) -> bool:
     return (d in c["domain"]
             or any(d == s or d.endswith("." + s) for s in c["suffix"])
             or any(k in d for k in c["keyword"])
-            or any(p.fullmatch(d) for p in c["regex"]))
+            or any(p.search(d) for p in c["regex"]))
 
 
+cl_loaded: dict[str, dict] = {}
 for name in ("fakeipfilter-cn", "fakeipfilter-!cn"):
-    cl = load_classical(name)
+    cl = load_classical(DIST / f"{name}.list")
+    cl_loaded[name] = cl
     cases = [(d, tgt, exp) for d, tgt, exp in CASES if tgt is (cn if name == "fakeipfilter-cn" else notcn)]
-    failed_cl = [d for d, target, expect in cases if hit_classical(cl, d) != expect]
+    failed_cl = [(d, exp) for d, target, exp in cases if hit_classical(cl, d) != exp]
     if failed_cl:
         print(f"ASSERT FAILED: {name} classical .list 语义断言失败：{failed_cl}")
         sys.exit(1)
-    print(f"ok {name}: classical .list 语义断言通过（{len(cases)} 条探针）")
+    print(f"ok {name}: classical .list 单集断言通过（{len(cases)} 条探针）")
+check_combined("classical .list", cl_loaded["fakeipfilter-cn"], cl_loaded["fakeipfilter-!cn"], hit_classical)
+
+# 4. 5B 产物核验（.mrs 非空 + -regex.list 纯 DOMAIN-REGEX 且条数与 JSON 一致）
+for name, sets in (("fakeipfilter-cn", cn), ("fakeipfilter-!cn", notcn)):
+    mrs = DIST / f"{name}.mrs"
+    rx_list = DIST / f"{name}-regex.list"
+    if not mrs.exists() or mrs.stat().st_size < 32:
+        print(f"ASSERT FAILED: {mrs.name} 缺失或异常过小")
+        sys.exit(1)
+    if not rx_list.exists():
+        print(f"ASSERT FAILED: {rx_list.name} 缺失")
+        sys.exit(1)
+    rx_lines = [l.strip() for l in rx_list.read_text(encoding="utf-8").splitlines() if l.strip() and not l.strip().startswith("#")]
+    if not all(l.startswith("DOMAIN-REGEX,^") and l.endswith("$") for l in rx_lines):
+        print(f"ASSERT FAILED: {rx_list.name} 含非锚定或非 DOMAIN-REGEX 行：{rx_lines}")
+        sys.exit(1)
+    if len(rx_lines) != len(sets["domain_regex"]):
+        print(f"ASSERT FAILED: {rx_list.name} 条数({len(rx_lines)}) != JSON regex 条数({len(sets['domain_regex'])})")
+        sys.exit(1)
+    print(f"ok {name}: 5B 产物就绪（{mrs.name}={mrs.stat().st_size}B, {rx_list.name}={len(rx_lines)} 条正则）")

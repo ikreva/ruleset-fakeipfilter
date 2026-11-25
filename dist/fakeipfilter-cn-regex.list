@@ -1,0 +1,5 @@
+# 自动生成于 build.py（5B 极简正则伴随集，配合同名 .mrs 使用），勿手改
+DOMAIN-REGEX,^(.+\.)?stun\.[^.]+(\.[^.]+(\.[^.]+(\.[^.]+)?)?)?\.cn$
+DOMAIN-REGEX,^(pdc|dc|gc)\._msdcs\.[^.]+\.[^.]+$
+DOMAIN-REGEX,^localhost\.[^.]+\.weixin\.qq\.com$
+DOMAIN-REGEX,^time\.[^.]+\.edu\.cn$

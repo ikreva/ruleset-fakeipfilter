@@ -1,0 +1,8 @@
+# 自动生成于 build.py（5B 极简正则伴随集，配合同名 .mrs 使用），勿手改
+DOMAIN-REGEX,^(.+\.)?stun\.[^.]+\.[^.]+(\.[^.]+(\.[^.]+(\.[^.]+)?)?)?$
+DOMAIN-REGEX,^[^.]+\.[^.]+\.xboxlive\.com$
+DOMAIN-REGEX,^ntp[1-7]?\.[^.]+\.com$
+DOMAIN-REGEX,^time[1-7]?\.[^.]+\.com$
+DOMAIN-REGEX,^time\.[^.]+\.apple\.com$
+DOMAIN-REGEX,^time\.[^.]+\.gov$
+DOMAIN-REGEX,^xbox\.[^.]+(\.[^.]+)?\.microsoft\.com$

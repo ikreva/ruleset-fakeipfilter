@@ -1,5 +1,4 @@
 #连通性探测 / 工具
-cable.auth.com
 network-test.debian.org
 detectportal.firefox.com
 resolver1.opendns.com
@@ -7,55 +6,29 @@ global.turn.twilio.com
 global.stun.twilio.com
 injections.adguard.org
 local.adguard.org
-proxy.golang.org
-shark007.net
-#NTP
+#NTP（合并 ntp[1-7]?.*.com 与 time[1-7]?.*.com，强制 ^...$ 锚定）
 time-ios.apple.com
 time.android.com    #Android 系统校时端点（重症；v2fly category-ntp 未收录）
 +.pool.ntp.org
-time.*.com
+^time[1-7]?\.[^.]+\.com$
 time.*.gov
 time.*.apple.com
-time1.*.com
-time2.*.com
-time3.*.com
-time4.*.com
-time5.*.com
-time6.*.com
-time7.*.com
-ntp.*.com
-ntp1.*.com
-ntp2.*.com
-ntp3.*.com
-ntp4.*.com
-ntp5.*.com
-ntp6.*.com
-ntp7.*.com
-#STUN
-+.stun.*.*
-+.stun.*.*.*
-+.stun.*.*.*.*
-+.stun.*.*.*.*.*
-stun.*.*
-stun.*.*.*
+^ntp[1-7]?\.[^.]+\.com$
+#STUN（合并 2~5 层子域通配，强制 ^...$ 锚定；避免 {m,n} 逗号防 classical .list 解析截断）
+^(.+\.)?stun\.[^.]+\.[^.]+(\.[^.]+(\.[^.]+(\.[^.]+)?)?)?$
 #JOOX 音乐
 api-jooxtt.sanook.com
 api.joox.com
 joox.com
-#Win10 本地连接检测
-+.msftconnecttest.com
-+.msftncsi.com
 #Nintendo Switch
 +.srv.nintendo.net
 +.cdn.nintendo.net
-*.n.n.srv.nintendo.net
 #Sony PlayStation
 +.stun.playstation.net
 #Microsoft Xbox
 xnotify.xboxlive.com
-xbox.*.*.microsoft.com
+^xbox\.[^.]+(\.[^.]+)?\.microsoft\.com$
 *.*.xboxlive.com
-xbox.*.microsoft.com
 #Wotgame
 +.battle.net
 +.wargaming.net
@@ -66,17 +39,12 @@ xbox.*.microsoft.com
 *.finalfantasyxiv.com
 *.ffxiv.com
 #Linksys Router
-heartbeat.belkin.com
 *.linksys.com
 *.linksyssmartwifi.com
 #Google
 lens.l.google.com
 stun.l.google.com
 na.b.g-tun.com
-#Netflix
-+.nflxvideo.net
-#Disney Plus
-+.media.dssott.com
 #Wifi Calling
 +.pub.3gppnetwork.org
 

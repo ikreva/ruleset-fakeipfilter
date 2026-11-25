@@ -14,10 +14,11 @@ localhost
 *.intranet
 *.localnet
 *.home
-PDC._msDCS.*.*
-DC._msDCS.*.*
-GC._msDCS.*.*
+^(pdc|dc|gc)\._msdcs\.[^.]+\.[^.]+$
 +.router.asus.com   #华硕路由管理主域+子域（重症：本地管理 UI/固件探测）
+#Windows 本地连网检测（微软全球/国内 Anycast 端点；走本地 DNS 避免代理未就绪时系统报断网）
++.msftconnecttest.com
++.msftncsi.com
 #NTP
 time1.cloud.tencent.com
 time.*.edu.cn
@@ -61,7 +62,6 @@ localhost.*.weixin.qq.com
 #网易云音乐
 music.163.com
 *.music.163.com
-*.126.net
 #百度音乐
 music.taihe.com
 #酷狗音乐
@@ -77,8 +77,6 @@ isure.stream.qqmusic.qq.com
 dl.stream.qqmusic.qq.com
 aqqmusic.tc.qq.com
 *.y.qq.com
-#虾米音乐
-*.xiami.com
 #咪咕音乐
 music.migu.cn
 *.music.migu.cn
@@ -111,12 +109,7 @@ ps.res.netease.com
 #花生壳
 +.oray.com
 +.orayimg.com
-#STUN 国内
-+.stun.*.cn
-+.stun.*.*.cn
-+.stun.*.*.*.cn
-+.stun.*.*.*.*.cn
-stun.*.cn
-stun.*.*.cn
+#STUN 国内（合并 1~4 层子域通配，强制 ^...$ 锚定；避免 {m,n} 逗号防 classical .list 解析截断）
+^(.+\.)?stun\.[^.]+(\.[^.]+(\.[^.]+(\.[^.]+)?)?)?\.cn$
 #Steam 国内 CDN
 alibaba.cdn.steampipe.steamcontent.com
