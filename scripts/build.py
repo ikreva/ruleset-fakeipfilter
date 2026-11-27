@@ -146,22 +146,50 @@ def apply_exclude(merged: dict, excludes: set[str]) -> dict:
                 if not any(c.search(s) for s in samples):
                     kept.append(pat)
             out[k] = kept
+        elif k == "domain_suffix":
+            out[k] = [
+                v for v in vals
+                if not any(
+                    v.lstrip(".") == e or v.endswith("." + e) or e.endswith(v)
+                    for e in excludes
+                )
+            ]
         else:
             out[k] = [v for v in vals if not any(v == e or v.endswith("." + e) for e in excludes)]
     return {k: v for k, v in out.items() if v}
 
 
+def extract_cn_entries(part: dict | None) -> dict:
+    """从通用上游类别中自动提取 `.cn` 域名与后缀归入 `fakeipfilter-cn`，防止国内站点落入 `!cn`。"""
+    if not part:
+        return {}
+    out = {
+        "domain": [d for d in part.get("domain", []) if d.endswith(".cn")],
+        "domain_suffix": [s for s in part.get("domain_suffix", []) if s.endswith(".cn")],
+    }
+    return {k: v for k, v in out.items() if v}
+
+
 def subtract_cn(notcn: dict, cn: dict) -> tuple[dict, int]:
-    """从 `!cn` 中扣除已被 `cn` 覆盖的 `domain` 与 `domain_suffix`，保证两名单互斥。"""
+    """从 `!cn` 中扣除已被 `cn` 覆盖的 `domain` 与 `domain_suffix`（含正则覆盖），保证两名单互斥。"""
     cn_domains = set(cn.get("domain", []))
     cn_suffixes = set(cn.get("domain_suffix", []))
+    cn_regexes = [re.compile(p) for p in cn.get("domain_regex", [])]
+
+    def in_cn_regex(d: str) -> bool:
+        return any(r.search(d) for r in cn_regexes)
 
     def in_cn_domain(d: str) -> bool:
-        return d in cn_domains or any(d.endswith(s) for s in cn_suffixes)
+        return d in cn_domains or any(d.endswith(s) for s in cn_suffixes) or in_cn_regex(d)
 
     def in_cn_suffix(s: str) -> bool:
         apex = s.lstrip(".")
-        return s in cn_suffixes or any(s.endswith(cs) for cs in cn_suffixes) or apex in cn_domains
+        return (
+            s in cn_suffixes
+            or any(s.endswith(cs) for cs in cn_suffixes)
+            or apex in cn_domains
+            or (in_cn_regex(apex) and in_cn_regex("ci." + apex))
+        )
 
     out = {k: list(v) for k, v in notcn.items()}
     dropped = 0
@@ -347,6 +375,13 @@ def compile_binary(name: str, merged: dict) -> None:
 def main() -> None:
     DIST.mkdir(exist_ok=True)
     excludes = load_excludes()
+    upstream_cache: dict[str, dict | None] = {}
+
+    def get_upstream(key: str) -> dict | None:
+        if key not in upstream_cache:
+            upstream_cache[key] = load_upstream_list(key)
+        return upstream_cache[key]
+
     built: dict[str, dict] = {}
     for name, spec in TARGETS:
         parts = []
@@ -358,11 +393,25 @@ def main() -> None:
                 else:
                     print(f"::warning:: manual 段缺失：{path}")
             else:
-                up = load_upstream_list(key)
+                up = get_upstream(key)
                 if up is None:
                     print(f"::warning:: upstream {key} 缺失或校验失败，本次跳过")
                 else:
                     parts.append(up)
+        if name == "fakeipfilter-cn":
+            # 自动将 !cn 上游（如 public-tracker / stun / ntp 等）中的 .cn 条目归类到 cn
+            auto_cn_count = 0
+            for t_name, t_spec in TARGETS:
+                if t_name == name:
+                    continue
+                for kind, key in t_spec:
+                    if kind == "upstream":
+                        cn_extra = extract_cn_entries(get_upstream(key))
+                        if cn_extra:
+                            auto_cn_count += len(cn_extra.get("domain", []))
+                            parts.append(cn_extra)
+            if auto_cn_count:
+                print(f"  -> 自动归类上游 .cn 域名到 {name}：{auto_cn_count} 条")
         merged = normalize(apply_exclude(merge(*parts), excludes))
         if name == "fakeipfilter-!cn" and "fakeipfilter-cn" in built:
             merged, sub_dropped = subtract_cn(merged, built["fakeipfilter-cn"])

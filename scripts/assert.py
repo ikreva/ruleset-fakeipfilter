@@ -70,7 +70,14 @@ for name, sets in (("fakeipfilter-cn", cn), ("fakeipfilter-!cn", notcn)):
         print(f"ASSERT FAILED ({name}): 存在后缀冗余：sub={sub_dup[:5]}, sfx={sfx_dup[:5]}")
         sys.exit(1)
 
-print(f"ok structural invariants: regex anchored (cn={len(cn['domain_regex'])}, !cn={len(notcn['domain_regex'])}), disjoint & suffix-pruned")
+# ---- 结构不变量 4：!cn 不得包含任何 .cn 域名或后缀 ----
+leaked_cn_dom = sorted(d for d in notcn["domain"] if d.endswith(".cn"))
+leaked_cn_sfx = sorted(s for s in notcn["domain_suffix"] if s.endswith(".cn"))
+if leaked_cn_dom or leaked_cn_sfx:
+    print(f"ASSERT FAILED (fakeipfilter-!cn): 存在漏归类到 !cn 的 .cn 条目：domains={leaked_cn_dom[:5]}, suffixes={leaked_cn_sfx[:5]}")
+    sys.exit(1)
+
+print(f"ok structural invariants: regex anchored (cn={len(cn['domain_regex'])}, !cn={len(notcn['domain_regex'])}), disjoint, suffix-pruned & zero .cn in !cn")
 
 # (域名, 名单, 期望是否命中)
 CASES = [
@@ -99,6 +106,7 @@ CASES = [
     ("stun.l.google.com",           notcn, True),
     ("stun.cloudflare.com",         notcn, True),
     ("stun.qq.cn",                  cn,    True),
+    ("stun.qq.com",                 cn,    True),
     ("stunning.example.com",        notcn, False),
     # ---- 重症：游戏主机 NAT / 平台联机 ----
     ("battle.net",                  notcn, True),
@@ -142,6 +150,14 @@ CASES = [
     ("tracker.opentrackr.org",      notcn, True),
     ("exodus.desync.com",           notcn, True),
     ("open.tracker.cl",             notcn, True),
+    ("bt.3dmgame.com",              cn,    True),
+    ("bt.3dmgame.com",              notcn, False),
+    ("bt.ali213.net",               cn,    True),
+    ("bt.ali213.net",               notcn, False),
+    ("btfile.sdo.com",              cn,    True),
+    ("btfile.sdo.com",              notcn, False),
+    ("tracker.loligirl.cn",         cn,    True),
+    ("tracker.loligirl.cn",         notcn, False),
     ("supl.google.com",             notcn, True),
     ("xtra1.gpsonextra.net",        notcn, True),
     ("music.163.com",               cn,    True),
@@ -185,6 +201,9 @@ COMBINED_CASES = [
     ("2.cn.pool.ntp.org", "cn"),
     ("printer.lan", "cn"),
     ("stun.qq.cn", "cn"),
+    ("stun.qq.com", "cn"),
+    ("bt.3dmgame.com", "cn"),
+    ("tracker.loligirl.cn", "cn"),
     ("stun.l.google.com", "!cn"),
     ("europe.pool.ntp.org", "!cn"),
     ("time.windows.com", "!cn"),
@@ -296,13 +315,29 @@ for name in ("fakeipfilter-cn", "fakeipfilter-!cn"):
     print(f"ok {name}: classical .list 单集断言通过（{len(cases)} 条探针）")
 check_combined("classical .list", cl_loaded["fakeipfilter-cn"], cl_loaded["fakeipfilter-!cn"], hit_classical)
 
-# 4. 5B 产物核验（.mrs 非空 + -regex.list 纯 DOMAIN-REGEX 且条数与 JSON 一致）
+# 4. 5B 产物核验（.mrs 非空 + Zstd/魔数/behavior/条数校验 + -regex.list 纯 DOMAIN-REGEX 且条数与 JSON 一致）
+zstd_bin = shutil.which("zstd")
 for name, sets in (("fakeipfilter-cn", cn), ("fakeipfilter-!cn", notcn)):
     mrs = DIST / f"{name}.mrs"
     rx_list = DIST / f"{name}-regex.list"
     if not mrs.exists() or mrs.stat().st_size < 32:
         print(f"ASSERT FAILED: {mrs.name} 缺失或异常过小")
         sys.exit(1)
+    if zstd_bin:
+        zr = subprocess.run([zstd_bin, "-dc", str(mrs)], capture_output=True)
+        if zr.returncode != 0 or len(zr.stdout) < 13:
+            print(f"ASSERT FAILED: {mrs.name} Zstd 解压失败：{zr.stderr[:200]}")
+            sys.exit(1)
+        raw = zr.stdout
+        magic = raw[:3]
+        version = raw[3]
+        behavior = raw[4]  # 0 = domain, 1 = ipcidr
+        mrs_count = int.from_bytes(raw[5:13], "big")
+        covered_apex = {s.lstrip(".") for s in sets["domain_suffix"] if s.lstrip(".") in sets["domain"]}
+        expected_mrs = len(sets["domain_suffix"]) + len(sets["domain"] - covered_apex)
+        if magic != b"MRS" or version < 1 or behavior != 0 or mrs_count != expected_mrs:
+            print(f"ASSERT FAILED: {mrs.name} 头校验失败：magic={magic!r} v={version} behavior={behavior} count={mrs_count} expected={expected_mrs}")
+            sys.exit(1)
     if not rx_list.exists():
         print(f"ASSERT FAILED: {rx_list.name} 缺失")
         sys.exit(1)

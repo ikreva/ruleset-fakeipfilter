@@ -5,6 +5,10 @@ on:
     - cron: "0 21 * * *"        # 每日 UTC 21:00 = 北京时间 05:00
   workflow_dispatch: {}
 
+concurrency:
+  group: update-rules
+  cancel-in-progress: false
+
 permissions:
   contents: write               # 允许 GITHUB_TOKEN 提交 dist/ 与 upstream/
 

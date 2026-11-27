@@ -111,5 +111,11 @@ ps.res.netease.com
 +.orayimg.com
 #STUN 国内（合并 1~4 层子域通配，强制 ^...$ 锚定；避免 {m,n} 逗号防 classical .list 解析截断）
 ^(.+\.)?stun\.[^.]+(\.[^.]+(\.[^.]+(\.[^.]+)?)?)?\.cn$
+stun.qq.com
+#国内游戏 / BT 公共 Tracker（非 .cn 后缀的国内站点；.cn 后缀由 build.py 自动从上游归类到 cn）
+bt.3dmgame.com
+bt.ali213.net
+tracker.ali213.net
+btfile.sdo.com
 #Steam 国内 CDN
 alibaba.cdn.steampipe.steamcontent.com

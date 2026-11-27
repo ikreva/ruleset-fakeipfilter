@@ -27,7 +27,6 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 UP = ROOT / "upstream"
 META = UP / "meta.json"
 
-BASE = "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/{name}.list"
 # 双链容灾：raw 失败依次尝试 jsDelivr 镜像（同分支同路径）
 MIRRORS = [
     "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/{name}.list",
@@ -109,6 +108,11 @@ def main() -> None:
         prev = meta.get(tag, {})
         text = fetch(name)
         if text is None:
+            dest = UP / f"{tag}.list"
+            if not dest.exists():
+                print(f"::error:: upstream {name} 下载失败且本地无缓存，中止")
+                hard_fail = True
+                continue
             stale = days_since(prev["date"]) if "date" in prev else 0
             if stale >= STALE_DAYS:
                 # 保留旧文件，但必须让人看见：红灯终止，防静默降级无限延续
